@@ -116,6 +116,18 @@
   .bar { position: fixed; left: 0; right: 0; bottom: 0; padding: 1rem; background: linear-gradient(transparent, var(--bg) 40%); }
   .bar .primary { display: block; width: min(560px, 100%); margin: 0 auto; padding: 1rem; font-size: 1.05rem; box-shadow: 0 12px 28px -8px #000c; }
 
+  /* Hall of fame */
+  .fame { margin-top: 2rem; }
+  .fame h2 { font-size: 1.1rem; font-weight: 800; letter-spacing: -.02em; margin: 0 0 .6rem; }
+  .fame ol { list-style: none; margin: 0; padding: 0; display: grid; gap: .35rem; }
+  .fame li { display: grid; grid-template-columns: 1fr auto auto auto; gap: 1rem; align-items: center; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: .55rem .9rem; font-weight: 600; }
+  .fame li:first-child { border-color: #ffb02066; }
+  .fame .who { display: flex; align-items: center; gap: .5rem; min-width: 0; }
+  .fame .who span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .fame .stat { font-family: "JetBrains Mono", monospace; font-size: .8rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .fame .stat b { color: var(--text); font-weight: 700; }
+  .fame li:first-child .stat b { color: var(--accent); }
+
   /* Game over */
   .over { position: fixed; inset: 0; z-index: 10; display: grid; place-items: center; padding: 1rem; background: #0b0d12e6; overflow: hidden; animation: fade .3s var(--ease); }
   @keyframes fade { from { opacity: 0; } }
@@ -179,6 +191,11 @@
   </div>
 
   <div class="board" id="players"></div>
+
+  <section class="fame" id="fame" hidden>
+    <h2>Hall of fame</h2>
+    <ol id="fameList"></ol>
+  </section>
 </div>
 
 <div class="bar" id="bar" hidden><button class="primary" id="enterAll" disabled>Enter round scores</button></div>
@@ -223,6 +240,15 @@
   const fmt = (n) => (n > 0 ? "+" : "") + n;
   const $ = (id) => document.getElementById(id);
   let newIndex = -1;
+  // All-time roster from the backend; empty when running the static file alone
+  let roster = [];
+  const emojiFor = (name) => roster.find((r) => r.name === name)?.emoji || SUGGESTED[name] || EMOJI[Math.floor(Math.random() * EMOJI.length)];
+  async function loadRoster() {
+    try {
+      const res = await fetch("/api/leaderboard");
+      if (res.ok) { roster = await res.json(); render(); }
+    } catch {} // offline or static-only: chips fall back to SUGGESTED
+  }
 
   // In-app confirm on the native <dialog>; resolves true when the action button is chosen
   function ask(title, msg, action, danger = false) {
@@ -263,7 +289,8 @@
 
     const chips = $("chips");
     chips.innerHTML = "";
-    Object.entries(SUGGESTED).filter(([n]) => !players.some((p) => p.name === n)).forEach(([n, e]) => {
+    const suggestions = roster.length ? roster.map((r) => [r.name, r.emoji]) : Object.entries(SUGGESTED);
+    suggestions.filter(([n]) => !players.some((p) => p.name === n)).forEach(([n, e]) => {
       const b = document.createElement("button");
       b.type = "button";
       b.innerHTML = `<span></span>`;
@@ -271,6 +298,16 @@
       b.append(n);
       b.onclick = () => addPlayer(n);
       chips.appendChild(b);
+    });
+
+    const played = roster.filter((r) => r.games > 0);
+    $("fame").hidden = !played.length;
+    $("fameList").innerHTML = "";
+    played.forEach((r) => {
+      const li = document.createElement("li");
+      li.innerHTML = `<div class="who"><span></span></div><span class="stat"><b>${r.wins}</b> win${r.wins === 1 ? "" : "s"}</span><span class="stat">${r.games} game${r.games === 1 ? "" : "s"}</span><span class="stat">${r.lasts} last</span>`;
+      li.querySelector(".who span").textContent = `${r.emoji} ${r.name}`;
+      $("fameList").appendChild(li);
     });
 
     if (!players.length) {
@@ -360,13 +397,25 @@
     }
     $("over").hidden = false;
     $("newGame").focus();
-    // ponytail: browser TTS instead of an audio asset; swap for <audio> if a recorded clip is wanted
-    if ("speechSynthesis" in window) {
+    // Plays public/loser.mp3 if present; falls back to the browser's speech engine
+    new Audio("/loser.mp3").play().catch(() => {
+      if (!("speechSynthesis" in window)) return;
       speechSynthesis.cancel();
       const u = new SpeechSynthesisUtterance("Losers!");
-      u.rate = .85; u.pitch = .6; u.volume = 1;
+      u.rate = .85; u.pitch = .6;
       speechSynthesis.speak(u);
-    }
+    });
+    recordGame(ranked);
+  }
+
+  // Send the finished game to the backend once; ignored when offline or static-only
+  function recordGame(ranked) {
+    if (state.recorded) return;
+    state.recorded = true; save();
+    fetch("/api/games", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ target: state.target, lowWins: state.lowWins, results: ranked.map((r) => ({ name: r.p.name, emoji: r.p.emoji, total: r.total, rank: r.rank })) }),
+    }).then(loadRoster).catch(() => {});
   }
 
   const dismiss = () => { state.seen = true; save(); $("over").hidden = true; };
@@ -377,6 +426,7 @@
   function newGame() {
     players.forEach((p) => (p.scores = []));
     state.seen = false;
+    state.recorded = false;
     commit();
   }
 
@@ -405,7 +455,7 @@
   $("lowWins").onclick = () => { state.lowWins = true; state.seen = false; commit(); };
 
   function addPlayer(name) {
-    newIndex = players.push({ name, scores: [], emoji: SUGGESTED[name] || EMOJI[Math.floor(Math.random() * EMOJI.length)] }) - 1;
+    newIndex = players.push({ name, scores: [], emoji: emojiFor(name) }) - 1;
     commit();
   }
 
@@ -420,4 +470,5 @@
   };
 
   render();
+  loadRoster();
 </script>

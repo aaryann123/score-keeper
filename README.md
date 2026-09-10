@@ -1,7 +1,7 @@
 # Score Keeper
 
-A scoreboard for card and board game nights. One HTML file, no build step, no backend,
-no accounts. Scores stay in the browser that entered them.
+A scoreboard for card and board game nights. One HTML file for the board, one small Worker
+and a SQLite table for the all-time record, no build step, no accounts.
 
 ![Board](docs/screenshots/board.png)
 
@@ -23,12 +23,16 @@ the board keeps the running totals in rank order and calls the game when someone
   with confetti and the last-place player with a drooping emoji, and the browser says
   "Losers!" out loud through the Web Speech API. Keep playing or start a new game from there.
 - **Emoji avatars.** Every player gets one. Tap it to cycle through eighteen options.
-- **Quick-add chips.** Five names are offered under the input; edit the `SUGGESTED` constant
-  at the top of the script to make them your regulars.
+- **Quick-add chips.** Everyone in the hall of fame is offered under the input. Before any game
+  has been recorded, five placeholder names from the `SUGGESTED` constant are shown instead.
 - **History per player.** The last eight round scores show as chips, negatives in red, with
   the full list on hover when there are more.
-- **Persists between visits.** State is saved to `localStorage` under the key `score-keeper`.
-  Nothing is sent anywhere.
+- **Persists between visits.** The current game is saved to `localStorage` under the key
+  `score-keeper`.
+- **Hall of fame.** When a game ends, the result is posted to a Cloudflare D1 database. The
+  page shows every player's all-time wins, games, and last places, and offers past players as
+  quick-add chips. Without the backend (opening the file from disk) the page still works;
+  it just keeps no history.
 - **In-app confirmations.** Removing a player or resetting the game uses a styled native
   `<dialog>`, not a browser alert.
 
@@ -46,16 +50,17 @@ game night.*
 
 ## Quick start
 
-Requires Node 18 or newer. There are no packages to install.
+Requires Node 18 or newer. `wrangler` is fetched on first use; nothing else to install.
 
 ```bash
 git clone https://github.com/aaryann123/score-keeper.git
 cd score-keeper
+npm run db:migrate:local
 npm run dev
 ```
 
-Open http://127.0.0.1:6161. You can also open `public/index.html` straight from disk; the
-dev server is only there for a stable local URL.
+Open http://127.0.0.1:6161. This runs the Worker and a local D1 database, so the hall of
+fame works offline. `npm run dev:static` serves only the page, with no history.
 
 To try it with a game already in progress, paste a synthetic state into the browser console:
 
@@ -67,19 +72,25 @@ node Tools/demo-state.mjs longgame
 localStorage.setItem("score-keeper", JSON.stringify(<paste the output here>)); location.reload();
 ```
 
-To host it, `wrangler.jsonc` is set up for Cloudflare Workers static assets:
+To host it, create your own database, paste its id into `wrangler.jsonc`, and deploy:
 
 ```bash
 npx wrangler login
+npx wrangler d1 create score-keeper     # prints a database_id
+npm run db:migrate
 npm run deploy
 ```
+
+To play a sound instead of the spoken "Losers!", drop an MP3 at `public/loser.mp3` before
+deploying. It is git-ignored, so pick whatever you like.
 
 ## Requirements
 
 | | |
 |---|---|
 | Browser | Any current Chrome, Safari, Firefox or Edge. Uses `<dialog>`, the Web Animations API, and `localStorage`. |
-| Node | 18 or newer, only for the dev server and the tools. |
+| Node | 18 or newer, for wrangler and the tools. |
+| Cloudflare | A free account. The Worker and D1 database fit inside the free tier. |
 | Fonts | Bricolage Grotesque and JetBrains Mono from Google Fonts; falls back to system fonts offline. |
 | Speech | The "Losers!" line needs a speech engine in the browser. Without one the game-over screen is silent. |
 | Screenshots | Google Chrome and macOS `sips`, only if you regenerate `docs/screenshots/`. |
@@ -87,9 +98,11 @@ npm run deploy
 ## How it's organised
 
 ```
-public/index.html      the whole app: styles, markup, and script in one file
-server.mjs             ten-line node:http dev server, port 6161 or $PORT
-wrangler.jsonc         Cloudflare Workers static-assets config
+public/index.html      the whole page: styles, markup, and script in one file
+src/worker.mjs         two JSON endpoints in front of the static page
+migrations/            D1 schema: players, games, game_players
+server.mjs             ten-line static dev server used by the screenshot tool
+wrangler.jsonc         Workers config: assets, Worker entry, D1 binding
 Tools/demo-state.mjs   synthetic game states for demos and screenshots
 Tools/screenshots.mjs  headless Chrome over DevTools protocol, regenerates docs/screenshots/
 docs/ARCHITECTURE.md   how state, rendering, ranking and the animations work
@@ -105,8 +118,8 @@ Pull requests are welcome.
 - Adding an emoji is one entry in the `EMOJI` array; a new suggested name is one entry in
   `SUGGESTED`.
 - Use the synthetic states in `Tools/demo-state.mjs` for screenshots. Never commit a real game.
-- Good first projects: an undo for the last round, a per-round table view, and sharing a board
-  between phones.
+- Good first projects: an undo for the last round, a per-round table view, and live sync of the
+  current game between phones.
 
 ## Credits and licence
 

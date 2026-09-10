@@ -1,27 +1,29 @@
 # Architecture
 
-Score Keeper is one HTML file. There is no framework, no bundler, and no server-side code; the
-dev server and the Cloudflare config only deliver the file. Everything below is about the
-script inside `public/index.html`.
+Score Keeper is one HTML page plus a Worker with two JSON endpoints and a D1 (SQLite) database.
+There is no framework and no bundler. The current game lives in the browser; only finished
+games reach the server.
 
 ```
-localStorage["score-keeper"]
-        │ load once
-        ▼
-   state { players[], target, lowWins, seen }
-        │
-   commit()  ──►  save()  ──►  render()  ──►  standings()  ──►  DOM
-        │                                                    (board, chips, status)
-        └──►  target reached and not seen?  ──►  showGameOver()
+localStorage["score-keeper"]                      D1: players, games, game_players
+        │ load once                                        ▲            │
+        ▼                                                  │            │ GET /api/leaderboard
+   state { players[], target, lowWins, seen, recorded }    │            ▼
+        │                                                  │        roster[] ──► chips, hall of fame
+   commit()  ──►  save()  ──►  render()  ──►  standings()  │
+        │                                                  │
+        └──►  target reached and not seen?  ──►  showGameOver()  ──►  POST /api/games
 ```
 
 ## Files
 
 | File | Responsibility |
 |---|---|
-| `public/index.html` | Styles, markup, and the script: state, rendering, ranking, animations, dialogs, speech. |
-| `server.mjs` | Serves that file on 127.0.0.1:6161 (or `$PORT`). Re-reads it on every request, so edits show on reload. |
-| `wrangler.jsonc` | Points Cloudflare Workers static assets at `public/`. No Worker script. |
+| `public/index.html` | Styles, markup, and the script: state, rendering, ranking, animations, dialogs, sound, API calls. |
+| `src/worker.mjs` | `GET /api/leaderboard` and `POST /api/games`; passes every other request to the static assets. |
+| `migrations/` | The D1 schema. `players` is the roster, `games` one row per finished game, `game_players` one row per player per game with total, rank and a last-place flag. |
+| `server.mjs` | Static-only server for `Tools/screenshots.mjs`. `wrangler dev` is the real dev server. |
+| `wrangler.jsonc` | Assets directory, Worker entry, D1 binding. |
 | `Tools/demo-state.mjs` | Deterministic synthetic game states. |
 | `Tools/screenshots.mjs` | Drives headless Chrome to capture `docs/screenshots/`. |
 
@@ -74,6 +76,23 @@ The spoken "Losers!" is a `SpeechSynthesisUtterance` with a low pitch and slow r
 refuse speech until the page has had a user gesture; entering a score satisfies that, which is
 why the line plays even though nothing in the code asks for permission.
 
+## Backend
+
+The Worker is deliberately thin. `POST /api/games` validates the body at the trust boundary
+(up to twenty players, names up to 24 characters, finite totals, integer ranks), inserts one
+`games` row, then in a single batch upserts each player (so a changed emoji sticks) and inserts
+their `game_players` row. `GET /api/leaderboard` is one grouped query: every player with a
+count of games, a sum of rank-one finishes, and a sum of last-place flags, ordered by wins.
+
+The page fetches the leaderboard once at load and again after each recorded game. The roster
+drives the quick-add chips and the emoji a returning name gets, and the players with at least
+one game make up the hall of fame. If the fetch fails (static file, offline), `roster` stays
+empty and the page behaves as it did before the backend existed.
+
+A game is posted from `showGameOver()`, guarded by `state.recorded`, which `newGame()` resets.
+Changing the target or the win direction resets `seen` and can show the overlay again for the
+same game, but not post it twice.
+
 ## Confirmations
 
 Removing a player and starting a new game both go through a native `<dialog>` opened with
@@ -99,6 +118,9 @@ the browser.
   `CLOUDFLARE_ACCOUNT_ID` alone still targeted the pinned account.
 - **A fresh `workers.dev` subdomain fails TLS for about a minute.** `curl` reports a handshake
   failure right after the first deploy. It resolves on its own; nothing is misconfigured.
+- **A wrangler.jsonc `account_id` is not the only pin.** The D1 `database_id` is per account too.
+  Someone forking the repo has to create their own database and paste the new id, which is why
+  the config file carries a comment saying so.
 - **DevTools `/json/list` is not just tabs.** Chrome 152 lists browser UI pages and extension
   service workers before the actual page, and the first entry is never the one you want.
   The screenshot script filters on `type === "page"`.

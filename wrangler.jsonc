@@ -1,5 +1,10 @@
 {
   "name": "score-keeper",
+  "main": "src/worker.mjs",
   "compatibility_date": "2026-09-01",
-  "assets": { "directory": "./public" }
+  "assets": { "directory": "./public", "binding": "ASSETS" },
+  // Create your own with `npx wrangler d1 create score-keeper` and paste the id it prints
+  "d1_databases": [
+    { "binding": "DB", "database_name": "score-keeper", "database_id": "9f69fa51-824b-469e-aa23-d19e332ada68" }
+  ]
 }

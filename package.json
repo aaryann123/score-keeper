@@ -3,7 +3,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node server.mjs",
-    "deploy": "wrangler deploy"
+    "dev": "wrangler dev --port 6161",
+    "dev:static": "node server.mjs",
+    "deploy": "wrangler deploy",
+    "db:migrate": "wrangler d1 migrations apply score-keeper --remote",
+    "db:migrate:local": "wrangler d1 migrations apply score-keeper --local"
   }
 }
