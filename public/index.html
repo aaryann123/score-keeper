@@ -240,14 +240,20 @@
   const fmt = (n) => (n > 0 ? "+" : "") + n;
   const $ = (id) => document.getElementById(id);
   let newIndex = -1;
-  // All-time roster from the backend; empty when running the static file alone
-  let roster = [];
+  // All-time roster from the backend, cached so a refresh shows real names instantly.
+  // rosterState: "pending" until the first fetch settles, then "ok" or "failed"
+  let roster = JSON.parse(localStorage.getItem(KEY + "-roster") || "[]");
+  let rosterState = "pending";
   const emojiFor = (name) => roster.find((r) => r.name === name)?.emoji || SUGGESTED[name] || EMOJI[Math.floor(Math.random() * EMOJI.length)];
   async function loadRoster() {
     try {
       const res = await fetch("/api/leaderboard");
-      if (res.ok) { roster = await res.json(); render(); }
-    } catch {} // offline or static-only: chips fall back to SUGGESTED
+      if (!res.ok) throw new Error(res.status);
+      roster = await res.json();
+      localStorage.setItem(KEY + "-roster", JSON.stringify(roster));
+      rosterState = "ok";
+    } catch { rosterState = "failed"; } // offline or static-only: chips fall back to SUGGESTED
+    render();
   }
 
   // In-app confirm on the native <dialog>; resolves true when the action button is chosen
@@ -289,7 +295,8 @@
 
     const chips = $("chips");
     chips.innerHTML = "";
-    const suggestions = roster.length ? roster.map((r) => [r.name, r.emoji]) : Object.entries(SUGGESTED);
+    // Placeholders only once we know there is no backend; never flash them before the roster loads
+    const suggestions = roster.length ? roster.map((r) => [r.name, r.emoji]) : rosterState === "failed" ? Object.entries(SUGGESTED) : [];
     suggestions.filter(([n]) => !players.some((p) => p.name === n)).forEach(([n, e]) => {
       const b = document.createElement("button");
       b.type = "button";
