@@ -271,6 +271,20 @@
   let lastTotals = new Map(), lastLead = -1;
   const deltas = new Map(); // player index -> score just entered, consumed by the next render
 
+  // Two rising sine notes for a lead change; synthesized so there is no file to load
+  let audioCtx;
+  function chime() {
+    try {
+      audioCtx ||= new (window.AudioContext || window.webkitAudioContext)();
+      [[660, 0], [990, .11]].forEach(([freq, at]) => {
+        const o = audioCtx.createOscillator(), g = audioCtx.createGain(), t = audioCtx.currentTime + at;
+        o.type = "sine"; o.frequency.value = freq;
+        g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(.18, t + .02); g.gain.exponentialRampToValueAtTime(.001, t + .22);
+        o.connect(g).connect(audioCtx.destination); o.start(t); o.stop(t + .25);
+      });
+    } catch {} // no audio context or blocked: stay silent
+  }
+
   // Roll a number from one value to the next, keeping the decimals of the destination
   function countUp(el, from, to) {
     if (reduced() || from === to) { el.textContent = to; return; }
@@ -418,7 +432,7 @@
         row.appendChild(f);
         f.addEventListener("animationend", () => f.remove());
       }
-      if (lead && leadIndex === i && lastLead !== -1 && lastLead !== i) row.classList.add("takeover");
+      if (lead && leadIndex === i && lastLead !== -1 && lastLead !== i) { row.classList.add("takeover"); chime(); navigator.vibrate?.(35); }
       row.querySelector("form").onsubmit = (e) => {
         e.preventDefault();
         const v = Number(e.target.querySelector("input").value);
