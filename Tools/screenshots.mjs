@@ -27,6 +27,11 @@ const SHOTS = [
     // push the leader past the target through the real form so the overlay and confetti fire
     action: `const i = document.querySelector('.player .entry input'); i.value = '60'; i.form.requestSubmit();`,
   },
+  {
+    // a fake room code is enough to draw the share dialog; the socket fails quietly on the static server
+    file: "share", state: "midgame", size: [1280, 860], room: "GAME7",
+    action: `document.getElementById("share").click(); await new Promise(r => setTimeout(r, 1500));`,
+  },
   { file: "mobile", state: "midgame", size: [390, 844], mobile: true },
 ];
 
@@ -60,10 +65,10 @@ try {
 
   for (const s of SHOTS) {
     await send("Emulation.setDeviceMetricsOverride", { width: s.size[0], height: s.size[1], deviceScaleFactor: 2, mobile: !!s.mobile });
-    await evaluate(`localStorage.setItem("score-keeper", ${JSON.stringify(JSON.stringify(states[s.state]))})`);
+    await evaluate(`localStorage.setItem("score-keeper", ${JSON.stringify(JSON.stringify({ ...states[s.state], room: s.room || null }))})`);
     await navigate();
     await evaluate(`document.fonts.ready.then(() => new Promise(r => setTimeout(r, 200)))`);
-    if (s.action) { await evaluate(s.action); await wait(1400); }
+    if (s.action) { await evaluate(`(async () => { ${s.action} })()`); await wait(1400); }
     const { data } = await send("Page.captureScreenshot", { format: "png" });
     const path = `${OUT}${s.file}.png`;
     writeFileSync(path, Buffer.from(data, "base64"));

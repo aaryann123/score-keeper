@@ -26,6 +26,18 @@ a 500 on `/api/rooms/<code>/ws` and a "did not return status 101" error in the l
 `npm run dev:static` serves only `public/index.html` through `server.mjs` on 6161 (or `$PORT`),
 with no API; the page falls back to the placeholder chips and keeps no history.
 
+## Loading a demo game
+
+```bash
+node Tools/demo-state.mjs longgame     # also: empty, midgame, hearts, nearend
+```
+
+Paste the output into the browser console, then reload:
+
+```js
+localStorage.setItem("score-keeper", JSON.stringify(<paste the output here>)); location.reload();
+```
+
 ## Layout
 
 ```
@@ -106,7 +118,8 @@ The script starts the dev server on port 6199, launches headless Chrome with rem
 9333, loads each state from `Tools/demo-state.mjs` into `localStorage`, reloads, waits for fonts,
 runs an optional in-page action (the game-over shot submits a score through the real form so the
 overlay and confetti fire), captures at 2x, and downscales to 1600 px wide with `sips`. Add a shot
-by appending to the `SHOTS` array; add a state by adding to `states` in `demo-state.mjs`.
+by appending to the `SHOTS` array; add a state by adding to `states` in `demo-state.mjs`. A shot
+can set `room` to draw the share dialog against the static server; the socket fails quietly.
 
 Open every PNG afterwards. Fonts still loading or an overlay caught mid-fade get past the script
 and not past a look.

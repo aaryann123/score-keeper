@@ -44,8 +44,8 @@ the board keeps the running totals in rank order and calls the game when someone
 
 | | |
 |---|---|
-| ![Empty](docs/screenshots/empty.png) | ![Lowest wins](docs/screenshots/lowest-wins.png) |
-| Empty | Lowest wins |
+| ![Share](docs/screenshots/share.png) | ![Lowest wins](docs/screenshots/lowest-wins.png) |
+| Share | Lowest wins |
 | ![History](docs/screenshots/history.png) | ![Game over](docs/screenshots/game-over.png) |
 | History | Game over |
 
@@ -68,15 +68,8 @@ Open http://127.0.0.1:6161. This runs the Worker, the live rooms, and a local D1
 sharing and the hall of fame work offline: open the same room URL in two tabs to watch them
 sync. `npm run dev:static` serves only the page, with no history and no sharing.
 
-To try it with a game already in progress, paste a synthetic state into the browser console:
-
-```bash
-node Tools/demo-state.mjs longgame
-```
-
-```js
-localStorage.setItem("score-keeper", JSON.stringify(<paste the output here>)); location.reload();
-```
+To try it with a game already in progress, load one of the synthetic states from
+`Tools/demo-state.mjs`; docs/BUILDING.md shows the one-line console paste.
 
 To host it, create your own database, paste its id into `wrangler.jsonc`, and deploy:
 
