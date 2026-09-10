@@ -81,7 +81,7 @@ npm run db:migrate
 npm run deploy
 ```
 
-To play a sound instead of the spoken "Losers!", drop an MP3 at `public/loser.mp3` before
+To play a sound instead of the spoken "Losers!", drop an audio file at `public/loser.m4a` before
 deploying. It is git-ignored, so pick whatever you like.
 
 ## Requirements

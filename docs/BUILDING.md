@@ -59,7 +59,7 @@ npx wrangler d1 execute score-keeper --remote --command \
   "INSERT OR IGNORE INTO players (name, emoji, created_at) VALUES ('Sam','🚀',1),('Mia','🦋',2)"
 ```
 
-**Loser sound.** Put an MP3 at `public/loser.mp3`. It is git-ignored; when it is missing the
+**Loser sound.** Put an audio file at `public/loser.m4a`. It is git-ignored; when it is missing the
 page falls back to the browser's speech engine.
 
 ## Adding things

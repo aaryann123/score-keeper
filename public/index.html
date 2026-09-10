@@ -397,8 +397,8 @@
     }
     $("over").hidden = false;
     $("newGame").focus();
-    // Plays public/loser.mp3 if present; falls back to the browser's speech engine
-    new Audio("/loser.mp3").play().catch(() => {
+    // Plays public/loser.m4a if present; falls back to the browser's speech engine
+    new Audio("/loser.m4a").play().catch(() => {
       if (!("speechSynthesis" in window)) return;
       speechSynthesis.cancel();
       const u = new SpeechSynthesisUtterance("Losers!");
