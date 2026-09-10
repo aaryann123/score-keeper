@@ -4,7 +4,7 @@
 
 | | |
 |---|---|
-| Node | 18 or newer. `npx wrangler` is fetched on first use; nothing to `npm install`. |
+| Node | 18 or newer. `npm install` pulls in wrangler, the only dependency. |
 | Browser | Any current one. The app uses `<dialog>`, the Web Animations API, and `localStorage`. |
 | Cloudflare | A free account to host it. Local development needs no account. |
 | Screenshots | Google Chrome at its default macOS path, and `sips`. Set `CHROME=/path/to/chrome` to override. |
@@ -14,9 +14,14 @@
 ```bash
 git clone https://github.com/aaryann123/score-keeper.git
 cd score-keeper
+npm install                # wrangler
 npm run db:migrate:local   # creates the local SQLite file under .wrangler/
-npm run dev                # http://127.0.0.1:6161, Worker + page + local D1
+npm run dev                # http://127.0.0.1:6161, Worker + page + rooms + local D1
 ```
+
+Use the local `wrangler` from `node_modules`, not a global one. An older global wrangler runs an
+older local runtime that cannot complete the Durable Object WebSocket handshake; the symptom is
+a 500 on `/api/rooms/<code>/ws` and a "did not return status 101" error in the log.
 
 `npm run dev:static` serves only `public/index.html` through `server.mjs` on 6161 (or `$PORT`),
 with no API; the page falls back to the placeholder chips and keeps no history.
@@ -25,10 +30,10 @@ with no API; the page falls back to the placeholder chips and keeps no history.
 
 ```
 public/index.html       the page; CSS in <style>, markup, then the script
-src/worker.mjs          GET /api/leaderboard, POST /api/games; everything else from public/
+src/worker.mjs          API routes, the Room Durable Object, everything else from public/
 migrations/0001_init.sql players, games, game_players
 server.mjs              static-only dev server, used by Tools/screenshots.mjs
-wrangler.jsonc          assets + Worker + D1 binding
+wrangler.jsonc          assets + Worker + D1 binding + Room Durable Object
 package.json            scripts: dev, dev:static, deploy, db:migrate, db:migrate:local
 Tools/demo-state.mjs    synthetic states: empty, midgame, longgame, hearts, nearend
 Tools/screenshots.mjs   screenshot generator
@@ -80,6 +85,10 @@ is the amber used for the leader, the primary button, and the wordmark.
 **A new confirm.** Call `ask(title, message, actionLabel, danger)`; it returns a promise that
 resolves `true` when the action button is chosen.
 
+**A change to what the room shares.** The whole `state` object minus `room` is sent on every
+change and stored as-is in the Durable Object. Add a field to the client-side `state` default
+and to `applyRemote()`, and it flows through. Nothing in the room needs to know about it.
+
 **A schema change.** Add `migrations/000N_<name>.sql`; `npm run db:migrate:local` and
 `npm run db:migrate` apply whatever has not run yet.
 
@@ -104,8 +113,8 @@ and not past a look.
 
 ## Not supported yet
 
-- Sharing one live board between several phones. The current game is per browser; only finished
-  games reach the database.
+- Two phones editing the same player in the same second. The second edit is rejected and that
+  phone's board snaps back to the shared truth, so the score has to be entered again.
 - Firefox before version 98 and Safari before 15.4 lack `<dialog>`; confirmations will not open.
 - The screenshot tool assumes macOS for `sips`. On Linux, swap the downscale for ImageMagick's
   `convert -resize 1600x`.

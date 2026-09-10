@@ -1,8 +1,8 @@
 # Architecture
 
-Score Keeper is one HTML page plus a Worker with two JSON endpoints and a D1 (SQLite) database.
-There is no framework and no bundler. The current game lives in the browser; only finished
-games reach the server.
+Score Keeper is one HTML page plus a Worker with a few JSON endpoints, a Durable Object per
+shared board, and a D1 (SQLite) database. There is no framework and no bundler. A solo game
+lives in the browser; a shared game lives in its room; finished games reach the database.
 
 ```
 localStorage["score-keeper"]                      D1: players, games, game_players
@@ -20,7 +20,7 @@ localStorage["score-keeper"]                      D1: players, games, game_playe
 | File | Responsibility |
 |---|---|
 | `public/index.html` | Styles, markup, and the script: state, rendering, ranking, animations, dialogs, sound, API calls. |
-| `src/worker.mjs` | `GET /api/leaderboard` and `POST /api/games`; passes every other request to the static assets. |
+| `src/worker.mjs` | `GET /api/leaderboard`, `POST /api/games`, `POST /api/rooms`, the WebSocket route into a room, and the `Room` Durable Object; passes every other request to the static assets. |
 | `migrations/` | The D1 schema. `players` is the roster, `games` one row per finished game, `game_players` one row per player per game with total, rank and a last-place flag. |
 | `server.mjs` | Static-only server for `Tools/screenshots.mjs`. `wrangler dev` is the real dev server. |
 | `wrangler.jsonc` | Assets directory, Worker entry, D1 binding. |
@@ -93,6 +93,32 @@ A game is posted from `showGameOver()`, guarded by `state.recorded`, which `newG
 Changing the target or the win direction resets `seen` and can show the overlay again for the
 same game, but not post it twice.
 
+## Live shared board
+
+Tapping Share asks the Worker for a five-letter code, puts it in the URL as `?room=CODE`, and
+opens a WebSocket to `/api/rooms/CODE/ws`. The Worker hands that request to the `Room` Durable
+Object named by the code, so everyone with the same code lands in the same object.
+
+The room holds one thing: the shared `state` and a version number. A phone that joins receives
+the current state, or `null` for a brand-new room, in which case the phone that created it sends
+its own board and that becomes the shared one. Every change on any phone goes through
+`commit()`, which sends the whole state with the version that phone last saw. The room compares
+versions: a match is stored, incremented, and broadcast to every socket; a mismatch means
+someone else got there first, so the room sends that phone the current truth instead and the
+phone re-renders from it. Whole-state messages are a few kilobytes at most, which is why
+there is no operation log.
+
+Receiving a state runs the same `commit()` path with sending switched off, so the rolling
+totals, the takeover sheen, and the podium fire on every phone, not only the one that typed.
+Dismissing the finish sets `seen` and sends, which closes the overlay everywhere. Recording
+to the hall of fame moves into the room when a board is shared: the phone that sees the target
+reached sends the results alongside the state, and the room, being single-threaded, writes them
+once and marks `recorded` before broadcasting. The room uses the WebSocket hibernation API, so
+an idle table costs nothing, and an alarm wipes the room a day after its last change.
+
+The QR code is drawn by `qrcode-generator`, loaded from cdnjs only when the dialog opens. If
+that load fails the dialog still shows the code and the link.
+
 ## Confirmations
 
 Removing a player and starting a new game both go through a native `<dialog>` opened with
@@ -121,6 +147,13 @@ the browser.
 - **A wrangler.jsonc `account_id` is not the only pin.** The D1 `database_id` is per account too.
   Someone forking the repo has to create their own database and paste the new id, which is why
   the config file carries a comment saying so.
+- **A global wrangler shadowed the local one.** `npm run dev` picked up a globally installed
+  wrangler 4.22 whose bundled runtime returned 500 on every Durable Object WebSocket upgrade,
+  while `npx wrangler deploy` used 4.131. The fix was to add wrangler as a dev dependency so the
+  script always runs the current runtime.
+- **Two tabs share `localStorage`.** Testing the live board in two tabs of one browser looked
+  like it worked before the socket did, because both tabs read the same saved game. The real
+  proof is a change appearing in the second tab without a reload.
 - **DevTools `/json/list` is not just tabs.** Chrome 152 lists browser UI pages and extension
   service workers before the actual page, and the first entry is never the one you want.
   The screenshot script filters on `type === "page"`.

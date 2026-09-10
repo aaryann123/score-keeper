@@ -1,7 +1,7 @@
 # Score Keeper
 
 A scoreboard for card and board game nights. One HTML file for the board, one small Worker
-and a SQLite table for the all-time record, no build step, no accounts.
+for the live sharing and the all-time record, no build step, no accounts.
 
 ![Board](docs/screenshots/board.png)
 
@@ -14,6 +14,10 @@ the board keeps the running totals in rank order and calls the game when someone
 
 ## What it does
 
+- **Live shared board.** Tap Share, and every phone that scans the QR code or enters the
+  five-letter code sees the same board. Scores, lead changes, the podium, and dismissing it all
+  happen on every screen at once. Each board is a Cloudflare Durable Object; edits carry a
+  version so two phones cannot silently overwrite each other.
 - **Round-based entry.** Type each player's score for the round and press one button. Cards
   re-sort and slide to their new rank with a FLIP animation instead of snapping.
 - **Highest or lowest wins.** A toggle flips the ranking, so it works for Rummy as well as
@@ -50,17 +54,19 @@ game night.*
 
 ## Quick start
 
-Requires Node 18 or newer. `wrangler` is fetched on first use; nothing else to install.
+Requires Node 18 or newer. `wrangler` is the only dependency.
 
 ```bash
 git clone https://github.com/aaryann123/score-keeper.git
 cd score-keeper
+npm install
 npm run db:migrate:local
 npm run dev
 ```
 
-Open http://127.0.0.1:6161. This runs the Worker and a local D1 database, so the hall of
-fame works offline. `npm run dev:static` serves only the page, with no history.
+Open http://127.0.0.1:6161. This runs the Worker, the live rooms, and a local D1 database, so
+sharing and the hall of fame work offline: open the same room URL in two tabs to watch them
+sync. `npm run dev:static` serves only the page, with no history and no sharing.
 
 To try it with a game already in progress, paste a synthetic state into the browser console:
 
@@ -90,7 +96,7 @@ deploying. It is git-ignored, so pick whatever you like.
 |---|---|
 | Browser | Any current Chrome, Safari, Firefox or Edge. Uses `<dialog>`, the Web Animations API, and `localStorage`. |
 | Node | 18 or newer, for wrangler and the tools. |
-| Cloudflare | A free account. The Worker and D1 database fit inside the free tier. |
+| Cloudflare | A free account. The Worker, the Durable Object rooms, and the D1 database all fit inside the free tier. |
 | Fonts | Bricolage Grotesque and JetBrains Mono from Google Fonts; falls back to system fonts offline. |
 | Speech | The "Losers!" line needs a speech engine in the browser. Without one the game-over screen is silent. |
 | Screenshots | Google Chrome and macOS `sips`, only if you regenerate `docs/screenshots/`. |
@@ -99,10 +105,10 @@ deploying. It is git-ignored, so pick whatever you like.
 
 ```
 public/index.html      the whole page: styles, markup, and script in one file
-src/worker.mjs         two JSON endpoints in front of the static page
+src/worker.mjs         JSON endpoints, the Room Durable Object, and static fallthrough
 migrations/            D1 schema: players, games, game_players
 server.mjs             ten-line static dev server used by the screenshot tool
-wrangler.jsonc         Workers config: assets, Worker entry, D1 binding
+wrangler.jsonc         Workers config: assets, Worker entry, D1 and Durable Object bindings
 Tools/demo-state.mjs   synthetic game states for demos and screenshots
 Tools/screenshots.mjs  headless Chrome over DevTools protocol, regenerates docs/screenshots/
 docs/ARCHITECTURE.md   how state, rendering, ranking and the animations work
@@ -118,13 +124,15 @@ Pull requests are welcome.
 - Adding an emoji is one entry in the `EMOJI` array; a new suggested name is one entry in
   `SUGGESTED`.
 - Use the synthetic states in `Tools/demo-state.mjs` for screenshots. Never commit a real game.
-- Good first projects: an undo for the last round, a per-round table view, and live sync of the
-  current game between phones.
+- Good first projects: an undo for the last round, a per-round table view, and a rivalry view
+  in the hall of fame.
 
 ## Credits and licence
 
 Score Keeper is MIT licensed, see LICENSE.
 
+- [qrcode-generator](https://github.com/kazuhikoarase/qrcode-generator) by Kazuhiko Arase, MIT,
+  loaded from cdnjs only when the share dialog opens.
 - [Bricolage Grotesque](https://github.com/ateliertriay/bricolage) by Mathieu Triay and
   [JetBrains Mono](https://www.jetbrains.com/lp/mono/) by JetBrains, both under the
   [SIL Open Font License 1.1](https://openfontlicense.org/).

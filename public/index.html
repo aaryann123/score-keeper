@@ -46,6 +46,19 @@
   .status b { color: var(--text); font-weight: 700; }
   .ghost { background: none; border: 1px solid var(--line); color: var(--muted); padding: .55rem .9rem; border-radius: 999px; font-size: .85rem; font-weight: 700; white-space: nowrap; transition: color .15s, border-color .15s; }
   .ghost:hover { color: var(--text); border-color: var(--muted); }
+  .top-actions { display: flex; gap: .4rem; }
+  .ghost.live { border-color: #3ddc8466; color: var(--text); }
+  .ghost .dot { display: inline-block; width: .5rem; height: .5rem; border-radius: 50%; background: #3ddc84; margin-right: .45rem; box-shadow: 0 0 0 3px #3ddc8422; vertical-align: middle; }
+  dialog.share { text-align: center; }
+  dialog.share .qr { background: #fff; border-radius: 12px; padding: .6rem; display: inline-block; margin: .9rem auto .5rem; line-height: 0; }
+  dialog.share .qr svg { width: 190px; height: 190px; }
+  dialog.share .code { font-family: "JetBrains Mono", monospace; font-size: 2rem; font-weight: 700; letter-spacing: .18em; color: var(--accent); margin-left: .18em; }
+  dialog.share .link { font-family: "JetBrains Mono", monospace; font-size: .72rem; color: var(--muted); word-break: break-all; margin-top: .2rem; }
+  dialog.share .join { display: flex; gap: .4rem; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--line); }
+  dialog.share .join input { flex: 1; min-width: 0; padding: .55rem .9rem; text-transform: uppercase; font-family: "JetBrains Mono", monospace; letter-spacing: .1em; }
+  dialog.share .join button { padding: .55rem .9rem; }
+  dialog.share .join input::placeholder { text-transform: none; letter-spacing: 0; font-family: "Bricolage Grotesque", system-ui, sans-serif; }
+  dialog.share form:not(.join) button { white-space: nowrap; padding: .8rem .5rem; }
 
   form.add { display: flex; gap: .5rem; }
   form.add input { flex: 1; min-width: 0; }
@@ -199,7 +212,10 @@
       <h1>Score<em>Keeper</em></h1>
       <div class="status" id="status" aria-live="polite">Round 0</div>
     </div>
-    <button class="ghost" id="reset" hidden>New game</button>
+    <div class="top-actions">
+      <button class="ghost" id="share">Share board</button>
+      <button class="ghost" id="reset" hidden>New game</button>
+    </div>
   </header>
 
   <form class="add" id="addForm">
@@ -246,6 +262,23 @@
   <form method="dialog">
     <button class="ghost" value="cancel">Cancel</button>
     <button class="primary" id="confirmOk" value="ok"></button>
+  </form>
+</dialog>
+
+<dialog class="confirm share" id="shareDlg">
+  <h3>Everyone's board</h3>
+  <p>Scan to follow along on your own phone. Every score shows up on every screen.</p>
+  <div class="qr" id="qr"></div>
+  <div class="code" id="roomCode"></div>
+  <div class="link" id="roomLink"></div>
+  <form method="dialog">
+    <button class="ghost" value="leave" id="leaveRoom">Leave</button>
+    <button class="primary" type="button" id="copyLink">Copy link</button>
+    <button class="ghost" value="close">Done</button>
+  </form>
+  <form class="join" id="joinForm">
+    <input id="joinCode" placeholder="Join a code" maxlength="5" autocomplete="off" autocapitalize="characters" aria-label="Board code">
+    <button class="ghost" type="submit">Join</button>
   </form>
 </dialog>
 
@@ -407,7 +440,7 @@
       const av = row.querySelector(".avatar");
       av.textContent = p.emoji;
       av.setAttribute("aria-label", `${p.name}'s emoji, tap to change`);
-      av.onclick = () => { p.emoji = EMOJI[(EMOJI.indexOf(p.emoji) + 1) % EMOJI.length]; av.textContent = p.emoji; save(); };
+      av.onclick = () => { p.emoji = EMOJI[(EMOJI.indexOf(p.emoji) + 1) % EMOJI.length]; av.textContent = p.emoji; save(); sendState(); };
       row.querySelector(".entry input").setAttribute("aria-label", `Score for ${p.name}`);
       row.querySelector(".del").setAttribute("aria-label", `Remove ${p.name}`);
       const hist = row.querySelector(".hist");
@@ -462,10 +495,11 @@
     if (focusIndex >= 0) box.querySelector(`[data-index="${focusIndex}"] input`)?.focus();
   }
 
-  function commit(focusIndex) {
+  function commit(focusIndex, { send = true } = {}) {
     save(); render(focusIndex);
     const ranked = standings();
-    if (!state.seen && ranked.some((r) => r.total >= state.target)) showGameOver(ranked);
+    if (send && !applying) sendState();
+    if (!state.seen && $("over").hidden && ranked.some((r) => r.total >= state.target)) showGameOver(ranked);
   }
 
   function showGameOver(ranked) {
@@ -514,14 +548,16 @@
   // Send the finished game to the backend once; ignored when offline or static-only
   function recordGame(ranked) {
     if (state.recorded) return;
+    const results = ranked.map((r) => ({ name: r.p.name, emoji: r.p.emoji, total: r.total, rank: r.rank }));
+    if (state.room) { sendState({ finished: results }); return; } // the room writes it exactly once for everyone
     state.recorded = true; save();
     fetch("/api/games", {
       method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ target: state.target, lowWins: state.lowWins, results: ranked.map((r) => ({ name: r.p.name, emoji: r.p.emoji, total: r.total, rank: r.rank })) }),
+      body: JSON.stringify({ target: state.target, lowWins: state.lowWins, results }),
     }).then(loadRoster).catch(() => {});
   }
 
-  const dismiss = () => { state.seen = true; save(); $("over").hidden = true; };
+  const dismiss = () => { state.seen = true; save(); $("over").hidden = true; sendState(); };
   $("keepPlaying").onclick = dismiss;
   $("newGame").onclick = () => { newGame(); $("over").hidden = true; };
   $("over").addEventListener("keydown", (e) => e.key === "Escape" && dismiss());
@@ -572,6 +608,105 @@
     input.focus();
   };
 
+  // ---- Live shared board ----
+  // One phone starts sharing and gets a five-letter code; everyone who joins sees the same
+  // state. Every change is sent whole, with the version we last saw, and the room rejects
+  // stale edits so two phones cannot silently overwrite each other.
+  let ws = null, roomVersion = 0, applying = false, presence = 0;
+  const codeOk = (c) => /^[A-Z2-9]{5}$/.test(c);
+  const urlRoom = (new URLSearchParams(location.search).get("room") || "").toUpperCase();
+  if (codeOk(urlRoom)) state.room = urlRoom;
+
+  function applyRemote(remote) {
+    applying = true;
+    const wasRecorded = !!state.recorded;
+    players.length = 0; players.push(...(remote.players || []));
+    Object.assign(state, { target: remote.target, lowWins: !!remote.lowWins, seen: !!remote.seen, recorded: !!remote.recorded });
+    commit(-1, { send: false });
+    if (state.seen) $("over").hidden = true; // someone else dismissed the finish
+    if (!wasRecorded && state.recorded) loadRoster();
+    applying = false;
+  }
+  function sendState(extra = {}) {
+    if (!ws || ws.readyState !== 1) return;
+    const { room, ...shared } = state;
+    ws.send(JSON.stringify({ type: "state", state: shared, version: roomVersion, ...extra }));
+  }
+  function connectRoom() {
+    if (!state.room || ws) return;
+    const sock = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api/rooms/${state.room}/ws`);
+    ws = sock;
+    sock.onmessage = ({ data }) => {
+      const m = JSON.parse(data);
+      if (m.type === "presence") { presence = m.n; renderRoom(); return; }
+      if (m.type !== "state") return;
+      roomVersion = m.version;
+      if (m.state === null) { sendState(); return; } // brand-new room: this board becomes the shared one
+      applyRemote(m.state);
+    };
+    sock.onopen = renderRoom;
+    sock.onclose = () => { if (ws !== sock) return; ws = null; presence = 0; renderRoom(); if (state.room) setTimeout(connectRoom, 2000); };
+    renderRoom();
+  }
+  function leaveRoom() {
+    const sock = ws; ws = null; state.room = null;
+    sock?.close();
+    history.replaceState(null, "", location.pathname);
+    save(); renderRoom();
+  }
+  function joinRoom(code) {
+    leaveRoom();
+    state.room = code; save();
+    history.replaceState(null, "", `?room=${code}`);
+    connectRoom();
+  }
+  function renderRoom() {
+    const b = $("share");
+    b.classList.toggle("live", !!state.room && !!ws);
+    const n = Math.max(1, presence);
+    b.innerHTML = state.room ? `<span class="dot"></span>${n} phone${n === 1 ? "" : "s"}` : "Share board";
+  }
+  const roomUrl = () => `${location.origin}/?room=${state.room}`;
+
+  async function openShare() {
+    if (!state.room) {
+      const res = await fetch("/api/rooms", { method: "POST" });
+      joinRoom((await res.json()).code);
+    }
+    $("roomCode").textContent = state.room;
+    $("roomLink").textContent = roomUrl();
+    const qr = $("qr");
+    qr.innerHTML = "";
+    try {
+      if (!window.qrcode) await new Promise((res, rej) => {
+        const el = document.createElement("script");
+        el.src = "https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js";
+        el.onload = res; el.onerror = rej; document.head.appendChild(el);
+      });
+      const q = qrcode(0, "M"); q.addData(roomUrl()); q.make();
+      qr.innerHTML = q.createSvgTag({ cellSize: 6, margin: 0, scalable: true });
+    } catch { qr.remove(); } // no QR library reachable: the code and link still work
+    $("shareDlg").showModal();
+  }
+  $("share").onclick = () => openShare().catch(() => ask("Couldn't start sharing", "Check the connection and try again.", "OK"));
+  $("copyLink").onclick = async () => {
+    if (navigator.share) { try { await navigator.share({ title: "Score Keeper", url: roomUrl() }); return; } catch {} }
+    await navigator.clipboard.writeText(roomUrl());
+    $("copyLink").textContent = "Copied";
+    setTimeout(() => ($("copyLink").textContent = "Copy link"), 1500);
+  };
+  $("leaveRoom").onclick = leaveRoom;
+  $("joinForm").onsubmit = (e) => {
+    e.preventDefault();
+    const code = $("joinCode").value.trim().toUpperCase();
+    if (!codeOk(code)) { $("joinCode").focus(); return; }
+    $("joinCode").value = "";
+    $("shareDlg").close();
+    joinRoom(code);
+  };
+
   render();
   loadRoster();
+  connectRoom();
+  renderRoom();
 </script>
